@@ -1,117 +1,189 @@
-#División del trabajo en equipo
-He analizado el enunciado y propongo la siguiente separación de responsabilidades, pensada para que ambos tengan una carga equilibrada y puedan trabajar en paralelo con una interfaz clara entre sus partes.
+División del Trabajo – Proyecto 2: Simulación Concurrente de un Sistema de Colas Bancario
+Hemos analizado el enunciado y proponemos una división del trabajo en dos partes independientes, con interfaces claramente definidas. Cada persona podrá desarrollar y probar su módulo por separado, y al final se integrarán sin conflictos. A continuación se detallan las responsabilidades de cada integrante.
 
-#Persona A: Generación de clientes, configuración y métricas teóricas
-Tareas principales:
+Persona A – Configuración, Generación de Clientes y Métricas Teóricas
+Objetivo: Implementar todo lo relacionado con la entrada del programa (archivo de configuración), la generación de los clientes (tiempos de llegada) y los cálculos teóricos del modelo M/M/c. Además, se encargará de imprimir el resumen final.
 
-1. Lectura y validación del archivo de configuración
+Módulos a desarrollar
+Lectura y validación del archivo de configuración
 
-    - Abrir el archivo, parsear líneas, ignorar comentarios y blancos.
+Leer el archivo .txt pasado como argumento.
 
-    - Verificar que existan todos los parámetros requeridos y que sus valores sean del tipo correcto y cumplan restricciones.
+Ignorar líneas vacías y comentarios (inician con #).
 
-    - Manejar errores con mensajes descriptivos en stderr y terminar el programa si es necesario.
+Parsear líneas con formato PARAMETRO=VALOR (sin espacios alrededor del =).
 
-2. Definición de estructuras de datos base (en coordinación con la Persona B)
+Verificar que existan los cinco parámetros obligatorios: CAJEROS, TCIERRE, LAMBDA, MU, MAX_CLIENTES.
 
-    - Estructura cliente: campos llegada (double), inicio (double), fin (double), id (int).
+Validar que los valores sean del tipo correcto (enteros para los primeros y último, double para LAMBDA y MU) y cumplan las restricciones (≥1, >0, etc.).
 
-    - Estructura estadisticas_globales: suma de tiempos de espera, suma de tiempos en sistema, máximo tiempo de espera, contador de clientes atendidos, etc.
+Si hay error, mostrar mensaje descriptivo en stderr y terminar el programa.
 
-    - Posiblemente la estructura de la cola (si se decide implementarla como lista enlazada, por ejemplo) – aunque la implementación concreta la hará la Persona B, ambos deben acordar la interfaz.
+Devolver los valores en una estructura o mediante parámetros por referencia.
 
-3. Generación de los clientes
+Prueba independiente: Crear un pequeño programa que lea distintos archivos (válidos e inválidos) y verifique que se detectan los errores.
 
-    - Inicializar la semilla de números aleatorios con srand(time(NULL)).
+Generación de los clientes (tiempos de llegada)
 
-    - Implementar el bucle que genera tiempos de llegada exponenciales usando -log(rand()/RAND_MAX) / LAMBDA.
+Implementar la generación de números aleatorios con rand() y srand(time(NULL)).
 
-    - Acumular el tiempo hasta superar TCIERRE o alcanzar MAX_CLIENTES.
+Generar los tiempos entre llegadas exponenciales usando la fórmula:
+T_i = -log(U) / LAMBDA, donde U es uniforme en (0,1).
 
-    - Almacenar cada cliente generado en una estructura que luego será puesta en la cola compartida.
+Acumular el tiempo hasta superar TCIERRE o hasta alcanzar MAX_CLIENTES.
 
-    Nota: como la cola aún no está disponible (la hará B), podrías generar un array temporal de clientes y luego pasarlo a B para que los encole, o bien B te provee una función encolar_cliente que uses durante la generación. Discutiremos esto más adelante.
+Almacenar cada cliente en un arreglo dinámico con su id (secuencial) y tiempo de llegada A_i.
 
-4. Cálculo de métricas teóricas (Erlang-C)
+Indicar si se alcanzó el límite MAX_CLIENTES (truncamiento).
 
-Implementar las fórmulas de la sección 5.4: tráfico ofrecido a = λ/μ, utilización ρ = a / c, factor de Erlang-C, Wq_teo y W_teo.
+Devolver el arreglo de clientes, la cantidad generada y la bandera de truncamiento.
 
-- Manejar el caso ρ ≥ 1 (sistema inestable).
+Prueba independiente: Generar clientes con parámetros conocidos y verificar que la cantidad y los tiempos sean razonables (por ejemplo, media de llegadas ≈ λ × Tcierre).
 
-- Al final, comparar con los resultados simulados que le proporcione la Persona B y calcular errores relativos.
+Cálculo de métricas teóricas (Erlang-C)
 
-- Generación del resumen final
+Calcular el tráfico ofrecido a = λ / μ.
 
-- Imprimir en stdout el bloque de salida obligatorio (sección 11), combinando los parámetros leídos, las estadísticas simuladas (de B) y los cálculos teóricos.
+Calcular la utilización por servidor ρ = a / c.
 
-#Persona B: Simulación concurrente (hilos, cola, sincronización)
-Tareas principales:
+Si ρ ≥ 1, marcar el sistema como inestable y no calcular más.
 
-- Implementación de la cola compartida FIFO
+En caso contrario, calcular el factor de Erlang-C (probabilidad de espera):
 
-- Elegir una estructura de datos (lista enlazada, arreglo circular, etc.) que soporte operaciones push (insertar al final) y pop (extraer del frente).
+text
+     (a^c / c!)
+C = ----------------
+    sum_{k=0}^{c-1} (a^k / k!) + (a^c / c!) * (1/(1-ρ))
+Nota: Implementar de forma iterativa para evitar desbordamiento (usar dobles y acumular términos).
 
-- Proteger todas las operaciones con un pthread_mutex_t.
+Calcular Wq_teo = C / (c*μ - λ) y W_teo = Wq_teo + 1/μ.
 
-- Proveer funciones para que la Persona A pueda encolar clientes (probablemente llamadas desde el hilo principal).
+Devolver estos valores junto con ρ y la bandera de estabilidad.
 
-- Variables de sincronización y estado global
+Prueba independiente: Comparar con valores conocidos de la literatura o con calculadoras online de M/M/c.
 
-- Declarar pthread_mutex_t mutex_cola y pthread_cond_t cond_cola.
+Impresión del resumen final
 
-- Variable banco_cerrado (inicialmente 0) que indica que no habrá más clientes.
+Recibir los parámetros, las estadísticas simuladas (desde la Persona B) y los resultados teóricos.
 
-- Estadísticas compartidas (las definidas con A) que se actualizarán durante la simulación.
+Imprimir en stdout el formato exacto especificado en la sección 11 del enunciado.
 
-- Lógica de los hilos cajeros
+Incluir el cálculo de errores relativos si el sistema es estable.
 
-- En main, crear CAJEROS hilos que ejecuten la función atender_clientes.
+Prueba independiente: Llamar a la función con datos de ejemplo y verificar que la salida coincide con el formato.
 
-- Cada hilo mantiene una variable local tiempo_libre (inicializada en 0.0) que representa el momento en que el cajero estará disponible.
+Persona B – Simulación Concurrente (Cola, Hilos, Sincronización)
+Objetivo: Implementar toda la lógica concurrente: la cola compartida, los hilos cajeros, la sincronización con mutex y variables de condición, y la recolección de estadísticas simuladas. También escribirá el flujo principal (main) que orquesta la simulación.
 
-- Dentro del hilo:
+Módulos a desarrollar
+Estructuras de datos compartidas
 
-- Entrar en un bucle mientras el banco no esté cerrado o haya clientes en cola.
+Definir la estructura cliente_t (con id, llegada, y opcionalmente inicio y fin para depuración, aunque estos los calcula cada cajero).
 
-- Bloquear el mutex, esperar en la condición si la cola está vacía y el banco aún no cierra.
+Definir la estructura estadisticas_t que contendrá acumuladores (suma de Wq, suma de W, máximo de espera, tiempo del último cliente atendido, contador de atendidos) y un mutex para protegerla.
 
-- Al despertar, extraer un cliente de la cola (si hay) y actualizar estadísticas de manera atómica.
+Nota: Estas definiciones deben estar en un archivo .h común (junto con las de Persona A) para que ambos las conozcan.
 
-- Liberar el mutex.
+Cola FIFO concurrente
 
-- Calcular B = max(cliente->llegada, tiempo_libre), luego F = B + S (con S generado exponencialmente con MU).
+Elegir una implementación (lista enlazada simple o arreglo circular).
 
-- Actualizar tiempo_libre = F.
+Proveer funciones:
 
-- Imprimir los eventos de inicio y fin (protegiendo la salida con el mutex o con otro mecanismo para evitar entremezclado).
+void cola_init(): inicializa la cola y su mutex.
 
-- Acumular en las estadísticas globales (con mutex) los valores de Wq y W y actualizar el máximo.
+void cola_push(cliente_t *cli): inserta al final (protegido con mutex).
 
-- Mecanismo de terminación ordenada
+cliente_t* cola_pop(): extrae del frente; si está vacía, retorna NULL (protegido).
 
-- Después de que la Persona A haya generado todos los clientes y los haya encolado, el hilo principal debe establecer banco_cerrado = 1 y hacer pthread_cond_broadcast para despertar a todos los cajeros que estén esperando.
+void cola_destroy(): libera memoria y destruye el mutex.
 
-- Luego hacer pthread_join de cada cajero.
+La cola debe ser utilizada tanto por el hilo principal (para encolar clientes) como por los cajeros (para extraer).
 
-- Recolección de estadísticas simuladas
+Prueba independiente: Crear un programa de prueba que lance varios hilos que hagan pushes y pops concurrentemente y verificar que no se pierdan elementos.
 
-- Una vez que todos los hilos han terminado, el hilo principal (o una función de B) debe calcular los promedios (Wq_sim, W_sim) y el máximo a partir de las acumulaciones globales.
+Variables de sincronización globales
 
-- Pasar estos valores a la Persona A para que los incluya en el resumen.
+pthread_mutex_t mutex_cola (ya incluido en la cola, pero puede ser separado).
 
-- Integración y dependencias
-Interfaz común: Ambos deben acordar los nombres y tipos de las estructuras y funciones que compartirán. Por ejemplo, un archivo banco.h con:
+pthread_cond_t cond_cola: para que los cajeros esperen cuando la cola está vacía.
 
-c
-typedef struct cliente cliente_t;
-typedef struct estadisticas estadisticas_t;
-void encolar_cliente(cliente_t *cli);  // implementada por B
-void obtener_estadisticas(...);        // para que A lea los resultados
-Flujo principal (main): Podría ser escrito por cualquiera, pero idealmente lo coordinan juntos. El flujo sería:
+int banco_cerrado: indicador de que no llegarán más clientes.
 
-Leer configuración (A).
-Inicializar estructuras (B).
-Generar clientes y encolarlos (A usa funciones de B).
-Crear hilos (B).
-Esperar terminación (B).
-Calcular teóricas y mostrar resumen (A con datos de B).
+Lógica de los hilos cajeros
+
+Función void* atender_clientes(void *arg):
+
+Cada hilo tiene una variable local tiempo_libre (inicializada en 0.0).
+
+Bucle mientras (!banco_cerrado o haya clientes en cola):
+
+Bloquear el mutex de la cola.
+
+Mientras la cola esté vacía y banco_cerrado == 0, esperar en cond_cola.
+
+Si la cola no está vacía, extraer un cliente.
+
+Si la cola está vacía pero banco_cerrado == 1, salir del bucle (el hilo termina).
+
+Liberar el mutex.
+
+Calcular B = max(cliente->llegada, tiempo_libre).
+
+Generar tiempo de servicio S = -log(U) / MU (con U uniforme).
+
+Calcular F = B + S.
+
+Actualizar tiempo_libre = F.
+
+Imprimir eventos de inicio y fin (proteger la impresión con un mutex global de salida o con el mismo mutex de la cola para evitar intercalado).
+
+Actualizar estadísticas:
+
+Wq = B - cliente->llegada
+
+W = F - cliente->llegada
+
+Acumular en las estadísticas globales (con su propio mutex) y actualizar máximo.
+
+Liberar el cliente (si se asignó dinámicamente).
+
+Prueba independiente: Crear un main de prueba que inicialice la cola con algunos clientes (con tiempos de llegada fijos), lance los hilos y observe que los tiempos de atención se calculan correctamente.
+
+Estadísticas simuladas
+
+Funciones para actualizar y consultar:
+
+void stats_init(): inicializa acumuladores y mutex.
+
+void stats_agregar(double wq, double w, double fin): suma, actualiza máximo y registra el último tiempo de fin.
+
+double stats_promedio_wq(), double stats_promedio_w(), double stats_max_espera(), double stats_ultimo_fin(), int stats_atendidos().
+
+Prueba independiente: Llamar desde varios hilos y verificar que los resultados sean consistentes.
+
+Flujo principal (main)
+
+Llamar a la función de Persona A para leer la configuración.
+
+Llamar a la función de Persona A para generar los clientes (obtener arreglo y cantidad).
+
+Inicializar cola, estadísticas y variables de sincronización.
+
+Encolar todos los clientes generados (usando cola_push).
+
+Crear los hilos cajeros (pthread_create).
+
+Una vez creados, establecer banco_cerrado = 1 y hacer pthread_cond_broadcast (esto está en el enunciado, pero en realidad los clientes ya están encolados antes de lanzar los hilos; la lógica de terminación se activa después de que todos los clientes están en cola y los hilos ya están corriendo. Otra opción es lanzar los hilos, luego encolar, y al final cerrar. Hay que decidir. Lo típico es: lanzar hilos, luego el main genera y encola, y cuando termina de encolar, pone banco_cerrado=1 y broadcast. Así los hilos trabajan mientras se encolan. Pero el enunciado dice: "El hilo principal (main) genera todos los clientes, los encola en orden de llegada y luego lanza los hilos cajeros." Eso es más simple: primero se generan y encolan todos, luego se lanzan los hilos. Entonces no es necesario broadcast para despertar porque al empezar ya hay clientes. Pero luego cuando se acaben, los hilos deben esperar a que lleguen más? No, como ya no llegarán más, deben terminar. El mecanismo de terminación es: los hilos, al ver la cola vacía y banco_cerrado=1, terminan. Pero si se lanzan después de encolar, al principio hay clientes, luego cuando se acaben, la cola queda vacía y banco_cerrado sigue siendo 0 (porque aún no se ha puesto a 1). Entonces se quedarían esperando en la condición. Para evitarlo, después de lanzar los hilos, el main debe poner banco_cerrado=1 y hacer broadcast. Eso es lo que dice la sección 6.6: después de encolar todos los clientes y lanzar los hilos, se hace eso. Así que el orden correcto es: generar y encolar, luego lanzar hilos, luego banco_cerrado=1 y broadcast.
+
+Esperar a que todos los hilos terminen con pthread_join.
+
+Obtener las estadísticas simuladas.
+
+Llamar a la función de Persona A para calcular las teóricas (pasando los parámetros).
+
+Llamar a la función de resumen de Persona A con todos los datos.
+
+Liberar recursos (cola, estadísticas, etc.).
+
+Prueba independiente: Usar un generador de clientes dummy (por ejemplo, un arreglo fijo) para verificar que la simulación produce resultados coherentes y que los hilos terminan correctamente.
