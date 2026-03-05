@@ -1,8 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <pthread.h>
-#include "banco.h"
 #include <math.h>
+#include "banco.h"
 
 // Varias globales para la cola circular y las estadísticas de los clientes
 static pthread_cond_t cond_cola_llena = PTHREAD_COND_INITIALIZER; // Condición para esperar a que haya clientes en la cola
@@ -402,4 +402,107 @@ void cola_despertar_cajeros()
 
     // Liberamos el mutex
     pthread_mutex_unlock(&cola_clientes.mutex);
+}
+
+int main(int argc, char *argv[])
+{
+    // Verificamos que se haya proporcionado el archivo de configuración
+    if (argc != 2)
+    {
+        fprintf(stderr, "Uso: %s archivo_config.txt\n", argv[0]);
+        return EXIT_FAILURE;
+    }
+
+    int cajeros, tcierre, max_clientes, truncado;
+    double lambda, mu_leido; // mu_leido es el valor de MU del archivo
+
+    // Verificamos que se pudo leer la configuración correctamente
+    if (!leer_configuracion(argv[1], &cajeros, &tcierre, &lambda, &mu_leido, &max_clientes))
+    {
+        return EXIT_FAILURE;
+    }
+
+    // Asignar la variable global mu
+    mu = mu_leido;
+
+    // Generar los clientes
+    int num_clientes;
+    cliente_t **clientes = generar_clientes(lambda, tcierre, max_clientes, &num_clientes, &truncado);
+
+    // Verificamos que se pudieron generar los clientes correctamente
+    if (clientes == NULL)
+    {
+        fprintf(stderr, "Error: No se pudieron generar los clientes.\n");
+        return EXIT_FAILURE;
+    }
+
+    // Inicializamos las estructuras
+    inicializar_cola(max_clientes);
+    inicializar_estadisticas();
+
+    // Encolamos los clientes
+    for (int i = 0; i < num_clientes; i++)
+    {
+        agregar_cliente(clientes[i]);
+    }
+
+    // Creamos los hilos de los cajeros
+    pthread_t hilos[cajeros];
+    int ids[cajeros];
+
+    // Verificamos que se pudieron crear los hilos de los cajeros
+    for (int i = 0; i < cajeros; i++)
+    {
+        ids[i] = i + 1;
+
+        // Si no se pudo crear un hilo
+        if (pthread_create(&hilos[i], NULL, atender_clientes, &ids[i]) != 0)
+        {
+            fprintf(stderr, "Error al crear el hilo del cajero %d\n", ids[i]);
+
+            // Cerramos el banco para que los hilos ya creados puedan terminar
+            banco_cerrado = 1;
+
+            // Despertamos a los cajeros para que puedan salir del wait
+            cola_despertar_cajeros();
+
+            return EXIT_FAILURE;
+        }
+    }
+
+    // Cerramos el banco para que los cajeros terminen de atender a los clientes pendientes
+    banco_cerrado = 1;
+
+    // Despertamos a los cajeros para que puedan salir del wait
+    cola_despertar_cajeros();
+
+    // Esperamos a que los hilos de los cajeros terminen
+    for (int i = 0; i < cajeros; i++)
+    {
+        pthread_join(hilos[i], NULL);
+    }
+
+    // Obtenemos las estadísticas para el resumen final
+    int atendidos = estadistica_atendidos();
+    double wq_sim = estadistica_promedio_wq();
+    double w_sim = estadistica_promedio_w();
+    double max_espera = estadistica_max_espera();
+    double ultimo_fin = estadistica_ultimo_fin();
+    double rho, wq_teo, w_teo;
+    int estable;
+    calcular_teoricas(cajeros, lambda, mu_leido, &rho, &wq_teo, &w_teo, &estable);
+
+    // Mostramos el resumen final
+    imprimir_resumen(cajeros, tcierre, lambda, mu_leido, max_clientes,
+                     atendidos, truncado, wq_sim, w_sim, max_espera, ultimo_fin,
+                     rho, wq_teo, w_teo, estable);
+
+    // Liberaramos todo
+    liberar_cola();
+    estadistica_destroy();
+    // NOTA: Cada cliente ya fue liberado por los hilos al atenderlo (free en atender_clientes).
+    // Solo necesitamos liberar el arreglo de punteros.
+    free(clientes);
+
+    return EXIT_SUCCESS;
 }
