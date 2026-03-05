@@ -118,27 +118,6 @@ void agregar_cliente(cliente_t *cli)
 }
 
 /**
- * @brief Obtiene el siguiente cliente de la cola circular
- *
- * @return Puntero al cliente obtenido o NULL si la cola está vacía
- */
-cliente_t *obtener_cliente()
-{
-    // Inicializamos el puntero al cliente en NULL
-    cliente_t *cli = NULL;
-
-    // Bloqueamos el mutex
-    pthread_mutex_lock(&cola_clientes.mutex);
-
-    cli = extraer_cliente_locked();
-
-    // Liberamos el mutex
-    pthread_mutex_unlock(&cola_clientes.mutex);
-
-    return cli;
-}
-
-/**
  * @brief Libera los recursos asociados a la cola circular
  */
 void liberar_cola()
@@ -344,7 +323,7 @@ void *atender_clientes(void *arg)
     while (1)
     {
         // Obtener el siguiente cliente de la cola
-        cliente_t *cliente = obtener_cliente_espera();
+        cliente_t *cliente = obtener_cliente();
 
         // Si no hay clientes en la cola salimos del ciclo
         if (cliente == NULL)
@@ -381,24 +360,28 @@ void *atender_clientes(void *arg)
     return NULL;
 }
 
-cliente_t *obtener_cliente_espera()
+cliente_t *obtener_cliente()
 {
-    cliente_t *cli = NULL;
-
     // Bloqueamos el mutex
     pthread_mutex_lock(&cola_clientes.mutex);
 
-    // Ciclo para esperar a que haya clientes en la cola o a que el banco se cierre
+    // Esperamos a que haya clientes en la cola o a que el banco se cierre
     while (cola_clientes.count == 0 && !banco_cerrado)
     {
-        pthread_cond_wait(&cond_cola_llena, &cola_clientes.mutex);
+        pthread_cond_wait(&cola_clientes.cond, &cola_clientes.mutex);
     }
 
-    if (cola_clientes.count > 0)
+    // Si el banco está cerrado y no hay clientes
+    if (banco_cerrado && cola_clientes.count == 0)
     {
-        // Si hay clientes en la cola, obtenemos el siguiente cliente
-        cli = extraer_cliente_locked();
+        // Liberamos el mutex
+        pthread_mutex_unlock(&cola_clientes.mutex);
+
+        return NULL;
     }
+
+    // Extraemos un cliente de la cola
+    cliente_t *cli = extraer_cliente_locked();
 
     // Liberamos el mutex
     pthread_mutex_unlock(&cola_clientes.mutex);

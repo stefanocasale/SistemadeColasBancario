@@ -16,7 +16,6 @@ void agregar_cliente(cliente_t *cliente);    // Agrega un cliente a la cola circ
 cliente_t *obtener_cliente();                // Obtiene el siguiente cliente de la cola circular
 void liberar_cola();                         // Libera los recursos asociados a la cola circular
 void inicializar_estadisticas();             // Inicializa las estadísticas
-cliente_t *obtener_cliente_espera();         // Obtiene el siguiente cliente de la cola circular
 void *atender_clientes(void *arg);           // Función para que los cajeros atiendan a los clientes
 
 // Funciones para la gestión de las estadísticas de los clientes atendidos
