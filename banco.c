@@ -2,9 +2,12 @@
 #include <stdlib.h>
 #include <pthread.h>
 #include "banco.h"
+#include <math.h>
 
-int banco_cerrado = 0;
-double mu;
+// Varias globales para la cola circular y las estadísticas de los clientes
+static pthread_cond_t cond_cola_llena = PTHREAD_COND_INITIALIZER; // Condición para esperar a que haya clientes en la cola
+int banco_cerrado = 0;                                            // Variable para indicar si el banco está cerrado
+double mu;                                                        // Tasa de servicio (clientes por unidad de tiempo)
 
 // Arreglo circular para clientes
 typedef struct cola_circular
@@ -317,10 +320,20 @@ void estadistica_destroy()
     pthread_mutex_destroy(&estadisticas_clientes.mutex);
 }
 
-// Varias globales para la cola circular y las estadísticas de los clientes
-static pthread_cond_t cond_cola_llena = PTHREAD_COND_INITIALIZER;
-int banco_cerrado = 0; // Variable para indicar si el banco está cerrado
+/*
+ * @brief Genera un tiempo de servicio aleatorio
+ */
+double generar_servicio()
+{
+    // Generamos un número aleatorio entre 0 y 1
+    double U = (double)rand() / RAND_MAX;
 
+    return -log(1 - U) / mu;
+}
+
+/*
+ * @brief Función para que los cajeros atiendan a los clientes
+ */
 void *atender_clientes(void *arg)
 {
     // Obtenemos el ID del cajero desde el argumento
@@ -331,33 +344,12 @@ void *atender_clientes(void *arg)
     while (1)
     {
         // Obtener el siguiente cliente de la cola
-        cliente_t *cliente = obtener_cliente();
+        cliente_t *cliente = obtener_cliente_espera();
 
-        // Bloqueamos el mutex
-        phthread_mutex_lock(&cola_clientes.mutex);
-
-        // Ciclo para esperar a que haya clientes en la cola o a que el banco se cierre
-        while (cola_clientes.count == 0 && !banco_cerrado)
-        {
-            pthread_cond_wait(&cond_cola_llena, &cola_clientes.mutex);
-        }
-
-        if (cola_clientes.count > 0)
-        {
-            // Si hay clientes en la cola, obtenemos el siguiente cliente
-            cliente = obtener_cliente();
-        }
-
-        // Liberamos el mutex
-        pthread_mutex_unlock(&cola_clientes.mutex);
-
-        // Si el cliente es NULL, verificamos si el banco está cerrado para salir del ciclo
+        // Si no hay clientes en la cola salimos del ciclo
         if (cliente == NULL)
         {
-            if (banco_cerrado)
-            {
-                break;
-            }
+            break;
         }
 
         // Si tenemos un cliente lo atendemos
@@ -389,13 +381,42 @@ void *atender_clientes(void *arg)
     return NULL;
 }
 
-/*
- * @brief Genera un tiempo de servicio aleatorio
- */
-double generar_servicio()
+cliente_t *obtener_cliente_espera()
 {
-    // Generamos un número aleatorio entre 0 y 1
-    double U = (double)rand() / RAND_MAX;
+    cliente_t *cli = NULL;
 
-    return -log(1 - U) / mu;
+    // Bloqueamos el mutex
+    pthread_mutex_lock(&cola_clientes.mutex);
+
+    // Ciclo para esperar a que haya clientes en la cola o a que el banco se cierre
+    while (cola_clientes.count == 0 && !banco_cerrado)
+    {
+        pthread_cond_wait(&cond_cola_llena, &cola_clientes.mutex);
+    }
+
+    if (cola_clientes.count > 0)
+    {
+        // Si hay clientes en la cola, obtenemos el siguiente cliente
+        cli = extraer_cliente_locked();
+    }
+
+    // Liberamos el mutex
+    pthread_mutex_unlock(&cola_clientes.mutex);
+
+    return cli;
+}
+
+/*
+ * @brief Despierta a los cajeros que están esperando por clientes en la cola
+ */
+void cola_despertar_cajeros()
+{
+    // Bloqueamos el mutex
+    pthread_mutex_lock(&cola_clientes.mutex);
+
+    // Hacemos signal a los cajeros que hay un nuevo cliente en la cola
+    pthread_cond_broadcast(&cond_cola_llena);
+
+    // Liberamos el mutex
+    pthread_mutex_unlock(&cola_clientes.mutex);
 }

@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 
+// Estructura para representar a un cliente
 typedef struct cliente
 {
     int id;
@@ -15,6 +16,8 @@ void agregar_cliente(cliente_t *cliente);    // Agrega un cliente a la cola circ
 cliente_t *obtener_cliente();                // Obtiene el siguiente cliente de la cola circular
 void liberar_cola();                         // Libera los recursos asociados a la cola circular
 void inicializar_estadisticas();             // Inicializa las estadísticas
+cliente_t *obtener_cliente_espera();         // Obtiene el siguiente cliente de la cola circular
+void *atender_clientes(void *arg);           // Función para que los cajeros atiendan a los clientes
 
 // Funciones para la gestión de las estadísticas de los clientes atendidos
 void inicializar_estadisticas();                           // Inicializa las estadísticas
@@ -26,7 +29,10 @@ double estadistica_ultimo_fin();                           // Devuelve el tiempo
 int estadistica_atendidos();                               // Devuelve el número total de clientes atendidos
 void estadistica_destroy();                                // Libera los recursos asociados a las estadísticas
 
-extern int banco_cerrado;  // Variable para indicar si el banco está cerrado
-extern int mu; // Tasa de servicio (clientes por unidad de tiempo)
+// Funciones para la gestion de cajeros
+void cola_despertar_cajeros(); // Despierta a los cajeros que están esperando por clientes en la cola
+
+extern int banco_cerrado; // Variable para indicar si el banco está cerrado
+extern double mu;         // Tasa de servicio (clientes por unidad de tiempo)
 
 #endif
