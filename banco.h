@@ -26,4 +26,7 @@ double estadistica_ultimo_fin();                           // Devuelve el tiempo
 int estadistica_atendidos();                               // Devuelve el número total de clientes atendidos
 void estadistica_destroy();                                // Libera los recursos asociados a las estadísticas
 
+extern int banco_cerrado;  // Variable para indicar si el banco está cerrado
+extern int mu; // Tasa de servicio (clientes por unidad de tiempo)
+
 #endif
