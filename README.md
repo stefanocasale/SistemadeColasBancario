@@ -76,7 +76,7 @@ Persona B – Simulación Concurrente (Cola, Hilos, Sincronización)
 Objetivo: Implementar toda la lógica concurrente: la cola compartida, los hilos cajeros, la sincronización con mutex y variables de condición, y la recolección de estadísticas simuladas. También escribirá el flujo principal (main) que orquesta la simulación.
 
 Módulos a desarrollar
-Estructuras de datos compartidas
+Estructuras de datos compartidas 
 
 Definir la estructura cliente_t (con id, llegada, y opcionalmente inicio y fin para depuración, aunque estos los calcula cada cajero).
 
