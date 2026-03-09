@@ -9,7 +9,6 @@
 #include <stdint.h>
 #include <float.h>
 #include <string.h>
-#include <sched.h>
 
 // Varias la cola circular y las estadísticas de los clientes
 int banco_cerrado = 0;
@@ -70,6 +69,9 @@ static cliente_t *extraer_cliente_locked()
     return cli;
 }
 
+/*
+ * @brief Inicializa un arreglo dinámico de eventos
+ */
 void inicializar_eventos()
 {
     capacidad_eventos = 100; // capacidad inicial
@@ -82,8 +84,17 @@ void inicializar_eventos()
     num_eventos = 0;
 }
 
+/*
+ * @brief Agrega un nuevo evento al arreglo de eventos de forma segura para hilos.
+ *
+ * @param tiempo Tiempo en que ocurre el evento
+ * @param tipo Tipo de evento
+ * @param id_cliente ID del cliente asociado al evento
+ * @param id_cajero ID del cajero asociado al evento
+ */
 void agregar_evento(double tiempo, tipo_evento_t tipo, int id_cliente, int id_cajero)
 {
+    // Bloqueamos el mutex
     pthread_mutex_lock(&mutex_eventos);
 
     // Si es necesario, expandir el array
@@ -105,14 +116,22 @@ void agregar_evento(double tiempo, tipo_evento_t tipo, int id_cliente, int id_ca
     eventos[num_eventos].id_cajero = id_cajero;
     num_eventos++;
 
+    // Liberamos el Mutex
     pthread_mutex_unlock(&mutex_eventos);
 }
 
-// Función de comparación para qsort
+/*
+ * @brief Función de comparación para Quicksort
+ *
+ * @param a Puntero al primer evento
+ * @param b Puntero al segundo evento
+ */
 static int comparar_eventos(const void *a, const void *b)
 {
     const evento_t *ea = (const evento_t *)a;
     const evento_t *eb = (const evento_t *)b;
+
+    // Comparamos
     if (ea->tiempo < eb->tiempo)
         return -1;
     if (ea->tiempo > eb->tiempo)
@@ -120,6 +139,9 @@ static int comparar_eventos(const void *a, const void *b)
     return 0;
 }
 
+/*
+ * @brief Imprime los eventos en orden cronológico
+ */
 void imprimir_eventos_ordenados()
 {
     // Ordenar los eventos por tiempo
@@ -144,9 +166,15 @@ void imprimir_eventos_ordenados()
     }
 }
 
+/*
+ *  @brief  Libera la memoria del arreglo de eventos y destruye su mutex.
+ */
 void liberar_eventos()
 {
+    // Liberamos eventos
     free(eventos);
+
+    // Destruimos mutex
     pthread_mutex_destroy(&mutex_eventos);
 }
 
@@ -171,6 +199,8 @@ void inicializar_cola(int capacidad_maxima)
     cola_clientes.head = 0;
     cola_clientes.tail = 0;
     cola_clientes.count = 0;
+
+    // Iniciamos los mutex
     pthread_mutex_init(&cola_clientes.mutex, NULL);
     pthread_cond_init(&cola_clientes.cond, NULL);
 }
@@ -212,7 +242,7 @@ void agregar_cliente(cliente_t *cli)
     pthread_mutex_unlock(&cola_clientes.mutex);
 }
 
-/**
+/*
  * @brief Libera los recursos asociados a la cola circular
  */
 void liberar_cola()
@@ -387,14 +417,6 @@ int estadistica_atendidos()
 }
 
 /*
- * @brief Libera los recursos asociados a las estadísticas
- */
-void estadistica_destroy()
-{
-    pthread_mutex_destroy(&estadisticas_clientes.mutex);
-}
-
-/*
  * @brief Genera un tiempo de servicio aleatorio
  */
 double generar_servicio()
@@ -418,7 +440,7 @@ void *atender_clientes(void *arg)
 {
     // Obtenemos el ID del cajero desde el argumento
     int id_cajero = (int)(intptr_t)arg;
-    //printf("DEBUG: Cajero %d iniciando (tid=%lu)\n", id_cajero, pthread_self());
+    // printf("DEBUG: Cajero %d iniciando (tid=%lu)\n", id_cajero, pthread_self());
     double tiempo_libre = 0.0;
 
     // Creamos el ciclo de atencion de clientes para el cajero
@@ -430,10 +452,10 @@ void *atender_clientes(void *arg)
         // Si no hay clientes en la cola salimos del ciclo
         if (cliente == NULL)
         {
-            //printf("DEBUG: Cajero %d no obtuvo cliente y termina\n", id_cajero);
+            // printf("DEBUG: Cajero %d no obtuvo cliente y termina\n", id_cajero);
             break;
         }
-        //printf("DEBUG: Cajero %d atendiendo cliente %d\n", id_cajero, cliente->id);
+        // printf("DEBUG: Cajero %d atendiendo cliente %d\n", id_cajero, cliente->id);
 
         // Si tenemos un cliente lo atendemos
         double B = (cliente->llegada > tiempo_libre) ? cliente->llegada : tiempo_libre;
@@ -461,6 +483,9 @@ void *atender_clientes(void *arg)
     return NULL;
 }
 
+/*
+ * @brief Obtiene el siguiente cliente de la cola circular
+ */
 cliente_t *obtener_cliente()
 {
     // Bloqueamos el mutex
@@ -469,6 +494,7 @@ cliente_t *obtener_cliente()
     // Esperamos a que haya clientes en la cola o a que el banco se cierre
     while (cola_clientes.count == 0 && !banco_cerrado)
     {
+        // Esperamos
         pthread_cond_wait(&cola_clientes.cond, &cola_clientes.mutex);
     }
 
@@ -490,19 +516,36 @@ cliente_t *obtener_cliente()
     return cli;
 }
 
-////////////////////////////////////////////////
-
+/*
+ * @brief Imprime el resumen final de la simulación con todos los resultados.
+ *
+ * @param cajeros Número de cajeros  utilizado en la simulación.
+ * @param tcierre Tiempo de cierre del banco.
+ * @param lambda Tasa de llegada de clientes.
+ * @param mu Tasa de servicio de los cajeros.
+ * @param max_clientes Límite máximo de clientes .
+ * @param clientes_atendidos Número total de clientes atendidos.
+ * @param truncado Indica si se alcanzó el límite MAX_CLIENTES.
+ * @param Wq_sim Tiempo promedio de espera en cola simulado.
+ * @param W_sim Tiempo promedio en sistema (cola + servicio) simulado.
+ * @param max_espera Tiempo máximo de espera en cola registrado.
+ * @param tiempo_ultimo Tiempo de finalización del último cliente atendido.
+ * @param rho Utilización del sistema (lambda / (c * mu)).
+ * @param Wq_teo Tiempo promedio de espera en cola teórico (Erlang-C).
+ * @param W_teo Tiempo promedio en sistema teórico.
+ * @param estable Indica si el sistema es estable.
+ */
 void imprimir_resumen(int cajeros, int tcierre, double lambda, double mu,
                       int max_clientes, int clientes_atendidos, int truncado,
                       double Wq_sim, double W_sim, double max_espera, double tiempo_ultimo,
                       double rho, double Wq_teo, double W_teo, int estable)
 {
-    /* Encabezado */
+    // Encabezado
     printf("=============================================\n");
     printf("                RESUMEN FINAL\n");
     printf("=============================================\n");
 
-    /* Parámetros (enteros y doubles tal como pide el enunciado) */
+    // Parámetros
     printf("Parametros:\n");
     printf("    CAJEROS:        %d\n", cajeros);
     printf("    TCIERRE:        %d\n", tcierre);
@@ -510,7 +553,7 @@ void imprimir_resumen(int cajeros, int tcierre, double lambda, double mu,
     printf("    MU:             %.6g\n", mu);
     printf("    MAX_CLIENTES:   %d\n", max_clientes);
 
-    /* Resultados simulados: números con dos decimales excepto enteros */
+    // Resultados Simulados
     printf("Resultados Simulados:\n");
     printf("    Clientes atendidos:                 %d\n", clientes_atendidos);
     printf("    Truncado por MAX_CLIENTES:          %s\n", truncado ? "SI" : "NO");
@@ -519,14 +562,14 @@ void imprimir_resumen(int cajeros, int tcierre, double lambda, double mu,
     printf("    Tiempo maximo de espera:            %.2f\n", max_espera);
     printf("    Tiempo total hasta ultimo cliente:  %.2f\n", tiempo_ultimo);
 
-    /* Resultados teóricos */
+    // Resultados Teóricos
     printf("Resultados Teoricos (M/M/c):\n");
-    /* rho: mostrar con 4 decimales (más precisión que 2) */
     printf("    Utilizacion (rho):                  %.4f\n", rho);
 
+    // Vemos si el sistema es estable
     if (!estable)
     {
-        /* Sistema inestable: indicar y omitir errores relativos */
+        // Inestable
         printf("    Tiempo promedio de espera teorico: N/A\n");
         printf("    Tiempo promedio en sistema teorico: N/A\n");
         printf("    Error relativo Wq: N/A\n");
@@ -534,13 +577,14 @@ void imprimir_resumen(int cajeros, int tcierre, double lambda, double mu,
     }
     else
     {
-        /* Mostrar tiempos teóricos con dos decimales */
+        // Estable
         printf("    Tiempo promedio de espera teorico:  %.2f\n", Wq_teo);
         printf("    Tiempo promedio en sistema teorico: %.2f\n", W_teo);
 
-        /* Calcular errores relativos (en porcentaje) si Wq_teo/W_teo != 0 */
+        // Calculos
         double err_Wq = 0.0;
         double err_W = 0.0;
+
         if (Wq_teo != 0.0)
             err_Wq = fabs((Wq_sim - Wq_teo) / Wq_teo) * 100.0;
         else
@@ -549,8 +593,6 @@ void imprimir_resumen(int cajeros, int tcierre, double lambda, double mu,
             err_W = fabs((W_sim - W_teo) / W_teo) * 100.0;
         else
             err_W = INFINITY;
-
-        /* Mostrar con una cifra decimal como en el ejemplo (p. ej. 4.3 %) */
         if (isfinite(err_Wq))
             printf("    Error relativo Wq:  %.1f %%\n", err_Wq);
         else
@@ -561,7 +603,7 @@ void imprimir_resumen(int cajeros, int tcierre, double lambda, double mu,
             printf("    Error relativo W: N/A\n");
     }
 
-    /* Estado del sistema */
+    // Estado del Sistema
     if (rho < 1.0)
     {
         printf("Estado del sistema:\n");
@@ -573,31 +615,25 @@ void imprimir_resumen(int cajeros, int tcierre, double lambda, double mu,
         printf("    rho = %.4f >= 1 -> Sistema inestable\n", rho);
     }
 
-    /* Fin del resumen */
+    // Final del resumen
     printf("\n");
 }
 
 /*
- * calcular_teoricas
+ * @brief Calcula las metricas teoricas del modelo M/M/c usando la formula de Erlang‑C.
  *
- * Calcula las metricas teoricas del modelo M/M/c usando la formula de Erlang‑C.
- * Parametros:
- *   - cajeros: numero de servidores c
- *   - lambda: tasa de llegada
- *   - mu: tasa de servicio
- *   - rho: salida con la utilizacion del sistema
- *   - Wq_teo: salida con el tiempo promedio de espera en cola
- *   - W_teo: salida con el tiempo promedio total en sistema
- *   - estable: salida 1 si el sistema es estable (rho < 1), 0 si no
- *
- * La funcion valida parametros, detecta inestabilidad, calcula el sumatorio
- * S = sum_{k=0}^{c-1} a^k/k! de forma numericamente estable, calcula el factor
- * Erlang‑C y finalmente obtiene Wq y W. Usa long double para reducir errores.
+ * @param cajeros Número de cajeros  utilizado en la simulación.
+ * @param lambda Tasa de llegada de clientes.
+ * @param mu Tasa de servicio de los cajeros
+ * @param rho Utilización del sistema (lambda / (c * mu)).
+ * @param Wq_teo Tiempo promedio de espera en cola teórico (Erlang-C).
+ * @param W_teo Tiempo promedio en sistema teórico.
+ * @param estable Indica si el sistema es estable.
  */
 void calcular_teoricas(int cajeros, double lambda, double mu,
                        double *rho, double *Wq_teo, double *W_teo, int *estable)
 {
-    /* Validaciones básicas */
+    // Verificaciones
     if (cajeros <= 0 || lambda < 0.0 || mu <= 0.0 || rho == NULL || Wq_teo == NULL || W_teo == NULL || estable == NULL)
     {
         if (rho)
@@ -612,17 +648,17 @@ void calcular_teoricas(int cajeros, double lambda, double mu,
         return;
     }
 
-    /* Tráfico ofrecido a = lambda / mu */
+    // Calculamos el Tráfico Ofrecido
     long double a = (long double)lambda / (long double)mu;
 
-    /* rho = a / c */
+    // Calculamos la utilización del Sistema
     long double rho_ld = a / (long double)cajeros;
     *rho = (double)rho_ld;
 
-    /* Condición de estabilidad */
+    // Verificamos Inestabilidad
     if (rho_ld >= 1.0L)
     {
-        /* Sistema inestable: emitir advertencia y omitir cálculos teóricos */
+        // Notificamos Inestabilidad
         fprintf(stderr, "Warning: sistema inestable (rho = %.12g >= 1). Se omiten metricas teoricas.\n", (double)rho_ld);
         *Wq_teo = INFINITY;
         *W_teo = INFINITY;
@@ -630,35 +666,28 @@ void calcular_teoricas(int cajeros, double lambda, double mu,
         return;
     }
 
-    /* Cálculo iterativo del sumatorio S = sum_{k=0}^{c-1} a^k / k!
-       y del término Tc = a^c / c! de forma estable (usar long double). */
-
+    // Calculos necesarios
     long double suma = 0.0L;
-    long double termino = 1.0L; /* para k = 0: a^0 / 0! = 1 */
+    long double termino = 1.0L;
     suma += termino;
 
-    /* Acumular términos desde k = 1 hasta c-1 */
+    // Acumulamos términos
     for (int k = 1; k <= cajeros - 1; ++k)
     {
-        /* termino_k = termino_{k-1} * (a / k) */
         termino = termino * (a / (long double)k);
         suma += termino;
     }
 
-    /* Ahora termino contiene a^{c-1}/(c-1)!; calcular a^c/c! multiplicando por a/c */
     long double termino_c = termino * (a / (long double)cajeros); /* a^c / c! */
 
-    /* Factor Erlang-C:
-       C(c,a) = [ a^c / (c! (1 - rho)) ] / [ sum_{k=0}^{c-1} a^k/k! + a^c/(c! (1 - rho)) ]
-       Para evitar recomputar factorials, usamos termino_c y suma.
-    */
+    // Factor Erlang-C
     long double numerador = termino_c / (1.0L - rho_ld);
     long double denominador = suma + numerador;
 
     long double Cc_a;
     if (denominador == 0.0L)
     {
-        /* Protección numérica */
+        // Hacemos una protección numérica
         Cc_a = 0.0L;
     }
     else
@@ -666,14 +695,13 @@ void calcular_teoricas(int cajeros, double lambda, double mu,
         Cc_a = numerador / denominador;
     }
 
-    /* Tiempos teóricos:
-       Wq_teo = C(c,a) / (c*mu - lambda)
-       W_teo  = Wq_teo + 1/mu
-    */
+    // Calculamos tiempos teóricos
     long double denom_Wq = (long double)cajeros * (long double)mu - (long double)lambda;
+
+    // Verificamos
     if (denom_Wq <= 0.0L)
     {
-        /* Protección: aunque ya comprobamos rho < 1, por seguridad */
+        // Protegemos el denominador
         fprintf(stderr, "calcular_teoricas: denominador para Wq no positivo (posible inestabilidad numerica).\n");
         *Wq_teo = INFINITY;
         *W_teo = INFINITY;
@@ -687,63 +715,36 @@ void calcular_teoricas(int cajeros, double lambda, double mu,
     *Wq_teo = (double)Wq_ld;
     *W_teo = (double)W_ld;
     *estable = 1;
-
-    /* Nota: Cc_a, Wq_ld y W_ld están en long double internamente para reducir errores numéricos. */
 }
 
 /*
- * exponencial_con_rand
- *
- * Genera una muestra de una distribucion exponencial usando la transformacion
+ * @brief Genera una muestra de una distribucion exponencial usando la transformacion
  * inversa aplicada a un numero uniforme generado por rand().
  *
- * Parametros:
- *  - tasa: parametro de la exponencial (lambda), en unidades de eventos por
+ *  @param tasa Parametro de la exponencial (lambda), en unidades de eventos por
  *          unidad de tiempo. Debe ser > 0.
  *
- * Comportamiento y notas:
- *  - Se obtiene U = rand() / (RAND_MAX + 1.0), con U en [0,1).
- *  - Se protege contra U == 0 asignando un valor muy pequeño (1e-12) para
- *    evitar log(0).
- *  - Se aplica la transformacion inversa: X = -ln(1 - U) / tasa.
- *  - La funcion usa rand(), que NO es reentrante ni seguro para hilos.
- *    Si se invoca desde varios hilos simultaneamente, es necesario:
- *      - proteger llamadas a esta funcion con un mutex, o
- *      - reemplazar rand() por rand_r() o por un generador por hilo.
- *  - La funcion no valida 'tasa'; el llamador debe asegurar tasa > 0.
- *
- * Retorno:
- *  - Un double con la muestra exponencial (tiempo inter-arrival).
+ * @return double Muestra exponencial.
  */
-
 static double exponencial_con_rand(double tasa)
 {
-    double u = (double)rand() / (RAND_MAX + 1.0); /* U en [0,1) */
+    double u = (double)rand() / (RAND_MAX + 1.0); // U en [0,1)
     if (u <= 0.0)
         u = 1e-12;
     return -log(1.0 - u) / tasa;
 }
 
 /*
- * generar_clientes:
- *  - lambda: tasa de llegada (clientes/segundo)
- *  - tcierre: tiempo de cierre (segundos logicos)
- *  - max_clientes: limite superior para truncar
- *  - num_clientes: salida con la cantidad generada
- *  - truncado: salida 1 si se trunco por max_clientes, 0 si no
- *
- * Retorna: arreglo dinamico de punteros a cliente_t (cada cliente tambien esta malloc'd).
- *          El llamador es responsable de free(clientes) (el arreglo) y los hilos
- *          deben liberar cada cliente cuando lo atiendan.
- * En caso de error de memoria devuelve NULL y deja *num_clientes = 0.
+ * @param lambda  tasa de llegada (clientes/segundo)
+ * @param tcierre Tiempo de cierre (segundos logicos)
+ * @param max_clientes Limite superior para truncar
+ * @param num_clientes Salida con la cantidad generada
+ * @param truncado Salida 1 si se trunco por max_clientes, 0 si no
  */
-
 cliente_t **generar_clientes(double lambda, int tcierre, int max_clientes,
                              int *num_clientes, int *truncado)
 {
-    /* Validacion inicial de parametros de entrada:
-       - num_clientes y truncado deben ser punteros validos para devolver resultados.
-       - lambda, tcierre y max_clientes deben ser positivos. */
+    // Validación inicial
     if (!num_clientes || !truncado || lambda <= 0.0 || tcierre <= 0 || max_clientes <= 0)
     {
         if (num_clientes)
@@ -753,8 +754,7 @@ cliente_t **generar_clientes(double lambda, int tcierre, int max_clientes,
         return NULL;
     }
 
-    /* Reservar espacio para el arreglo de punteros a cliente_t.
-       Se reserva inicialmente la capacidad maxima (max_clientes). */
+    // Reservamos espacio al puntero
     cliente_t **vec = malloc(sizeof(cliente_t *) * (size_t)max_clientes);
     if (!vec)
     {
@@ -763,31 +763,24 @@ cliente_t **generar_clientes(double lambda, int tcierre, int max_clientes,
         return NULL;
     }
 
-    /* Variables de control:
-       - acumulado: tiempo acumulado de llegadas (reloj logico).
-       - n: numero de clientes generados hasta ahora.
-       - id: identificador incremental asignado a cada cliente. */
+    // Definimos variables de contrl
     double acumulado = 0.0;
     int n = 0;
     int id = 0;
 
-    /* Bucle principal: generar inter-arrivals exponenciales y crear clientes
-       hasta alcanzar el tope max_clientes o hasta que la proxima llegada
-       supere o iguale tcierre. */
     while (n < max_clientes)
     {
         double ti = exponencial_con_rand(lambda);
         acumulado += ti;
 
-        /* si la llegada seria >= tcierre, no la registramos y salimos */
+        // Verificamos si registramos
         if (acumulado >= (double)tcierre)
             break;
 
         cliente_t *c = malloc(sizeof(cliente_t));
         if (!c)
         {
-            /* En caso de fallo de malloc para un cliente, liberar todo lo creado
-               hasta el momento y devolver error (NULL). */
+            // Si falla liberamos
             for (int j = 0; j < n; ++j)
                 free(vec[j]);
             free(vec);
@@ -796,21 +789,17 @@ cliente_t **generar_clientes(double lambda, int tcierre, int max_clientes,
             return NULL;
         }
 
-        /* Asignar id y tiempo de llegada al cliente recien creado */
+        // Asignamos ID
         id++;
         c->id = id;
         c->llegada = acumulado;
         vec[n++] = c;
     }
 
-    /* Determinar si la generacion se trunco por alcanzar el tope max_clientes */
+    // Verificamos si la generación se trunco
     *truncado = (n >= max_clientes) ? 1 : 0;
     *num_clientes = n;
 
-    /* Ajustar el tamano del bloque devuelto con realloc para ahorrar memoria:
-       - Si se generaron clientes (n > 0), reducir a n punteros.
-       - Si no se genero ninguno (n == 0), reducir a 1 para devolver un bloque
-         no-NULL que el llamador pueda free() sin confundir con error. */
     if (n > 0)
     {
         cliente_t **tmp = realloc(vec, sizeof(cliente_t *) * (size_t)n);
@@ -819,8 +808,7 @@ cliente_t **generar_clientes(double lambda, int tcierre, int max_clientes,
     }
     else
     {
-        /* Si no se genero ningun cliente, devolvemos un arreglo no-NULL para que main no lo trate como error.
-           Reservamos un bloque minimo que luego free(clientes) funcionara correctamente. */
+        // Si no se genera nigún cliente
         cliente_t **tmp = realloc(vec, sizeof(cliente_t *) * 1);
         if (tmp)
             vec = tmp;
@@ -834,20 +822,19 @@ static char *recortar(char *s)
 {
     char *fin;
 
-    /* Avanza mientras haya espacios iniciales */
+    // Avanzamos mientras haya espacion iniciales
     while (isspace((unsigned char)*s))
         s++;
 
-    /* Si la cadena quedo vacia, se retorna tal cual */
+    // Retornamos si queda vacía
     if (*s == 0)
         return s;
 
-    /* Ubica el ultimo caracter no blanco */
+    // Ubicamos el último no balnco
     fin = s + strlen(s) - 1;
     while (fin > s && isspace((unsigned char)*fin))
         fin--;
 
-    /* Coloca terminador para cortar espacios finales */
     fin[1] = '\0';
 
     return s;
@@ -857,17 +844,17 @@ static int es_entero_valido(const char *s, long *salida)
 {
     char *fin;
 
-    /* Reinicia errno antes de convertir */
+    // Reiniciamos antes de convertir
     errno = 0;
 
-    /* Intenta convertir a entero base 10 */
+    // Convertimos a base 10
     long val = strtol(s, &fin, 10);
 
-    /* Error si strtol fallo o no convirtio nada */
+    // Si falla, error
     if (errno != 0 || fin == s)
         return 0;
 
-    /* Verifica que lo que queda sean solo espacios */
+    // Verifica los espacios
     while (*fin)
     {
         if (!isspace((unsigned char)*fin))
@@ -883,17 +870,17 @@ static int es_double_valido(const char *s, double *salida)
 {
     char *fin;
 
-    /* Reinicia errno antes de convertir */
+    // Reiniciamos antes de convertir
     errno = 0;
 
-    /* Intenta convertir a double */
+    // Convierte a double
     double val = strtod(s, &fin);
 
-    /* Error si strtod fallo o no convirtio nada */
+    // Si falla, error
     if (errno != 0 || fin == s)
         return 0;
 
-    /* Verifica que lo que queda sean solo espacios */
+    // Verifica los espacios
     while (*fin)
     {
         if (!isspace((unsigned char)*fin))
@@ -908,101 +895,94 @@ static int es_double_valido(const char *s, double *salida)
 #define LINEA_MAX 512
 
 /*
- * leer_configuracion
+ * @brief Lee el archivo de configuración y extrae cinco parámetros obligatorios,
+ * validando formato, tipo y rango. Si la lectura y validación son correctas,
+ * escribe los valores en los punteros de salida y devuelve 1. En caso de error,
+ * imprime un mensaje en stderr y devuelve 0.
  *
- * Lee el archivo de configuración indicado por 'archivo' y extrae cinco
- * parámetros obligatorios, validando formato, tipo y rango. Si la lectura y
- * validación son correctas, escribe los valores en los punteros de salida y
- * devuelve 1. En caso de error imprime un mensaje en stderr y devuelve 0.
+ * @param archivo Ruta al fichero de configuración.
+ * @param cajeros Puntero donde se almacenará el entero CAJEROS.
+ * @param tcierre Puntero donde se almacenará el entero TCIERRE.
+ * @param lambda Puntero donde se almacenará el double LAMBDA.
+ * @param mu Puntero donde se almacenará el double MU.
+ * @param max_clientes Puntero donde se almacenará el entero MAX_CLIENTES.
  *
- * Parámetros:
- *  - archivo: ruta al fichero de configuración (cadena C).
- *  - cajeros: puntero donde se almacenará el entero CAJEROS.
- *  - tcierre: puntero donde se almacenará el entero TCIERRE.
- *  - lambda:  puntero donde se almacenará el double LAMBDA.
- *  - mu:      puntero donde se almacenará el double MU.
- *  - max_clientes: puntero donde se almacenará el entero MAX_CLIENTES.
- *
- * Formato esperado del archivo:
- *  - Líneas del tipo NOMBRE=VALOR (sin espacios alrededor de '=').
- *  - Comentarios: líneas que comienzan con '#'.
- *  - Líneas vacías: se ignoran.
- *  - Nombres válidos (case sensitive): CAJEROS, TCIERRE, LAMBDA, MU, MAX_CLIENTES.
- *
- * Dependencias externas (deben existir en el proyecto):
- *  - recortar(char *): elimina espacios en los extremos y devuelve puntero.
- *  - es_entero_valido(const char *, long *): valida y convierte enteros.
- *  - es_double_valido(const char *, double *): valida y convierte doubles.
  */
 int leer_configuracion(const char *archivo, int *cajeros, int *tcierre,
                        double *lambda, double *mu, int *max_clientes)
 {
-    /* Intentar abrir el archivo en modo lectura */
+    // Abre el archivo en modo lectura
     FILE *f = fopen(archivo, "r");
+
+    // Verificamos si abre
     if (!f)
     {
-        /* Error al abrir: informar y devolver fallo */
+        // Si no abre, informamos de error
         fprintf(stderr, "Error: no se pudo abrir el archivo de configuracion '%s'.\n", archivo);
         return 0;
     }
 
-    /* Flags para comprobar que todos los parámetros obligatorios aparecen */
+    // Verificamos que todos los parámetros estan en el archivo
     int encontrado_cajeros = 0, encontrado_tcierre = 0, encontrado_lambda = 0, encontrado_mu = 0, encontrado_max = 0;
     char linea[LINEA_MAX];
     int num_linea = 0;
 
-    /* Leer el archivo línea por línea */
+    // Bucle para leer cada línea del archivo
     while (fgets(linea, sizeof(linea), f))
     {
         num_linea++;
-        /* recortar elimina espacios en ambos extremos y devuelve puntero a la cadena */
         char *p = recortar(linea);
 
-        /* Ignorar líneas vacías */
+        // Verificamos las líneas no vacías
         if (*p == '\0')
-            continue; // línea en blanco
+            continue;
 
-        /* Ignorar comentarios que comienzan con '#' */
+        // Ignoramos las líneas que empiecen con #
         if (*p == '#')
-            continue; // comentario
+            continue;
 
-        /* Buscar el signo '=' que separa nombre y valor */
+        // Buscamos el signo igual
         char *eq = strchr(p, '=');
+
+        // Verificamos la línea
         if (!eq)
         {
-            /* Línea inválida: falta '=' */
+            // Informar error por falta de =
             fprintf(stderr, "Error en %s:%d: linea invalida (falta '='): '%s'\n", archivo, num_linea, p);
             fclose(f);
             return 0;
         }
 
-        /* Rechazar espacios alrededor del '=' (formato estricto) */
+        // Verificamos que no hay espacios vacíos rodeando al =
         if (eq == p || *(eq - 1) == ' ' || *(eq + 1) == ' ')
         {
+            // Si hay espacios, informamos de error
             fprintf(stderr, "Error en %s:%d: formato invalido, no debe haber espacios alrededor de '=': '%s'\n", archivo, num_linea, p);
             fclose(f);
             return 0;
         }
 
-        /* Separar nombre y valor; poner terminador en '=' y recortar ambos */
         *eq = '\0';
         char *nombre = recortar(p);
         char *valor = recortar(eq + 1);
 
-        /* Comparar el nombre con los parámetros esperados y validar el valor */
+        // Verificamos con los nombres de los parámetros
         if (strcmp(nombre, "CAJEROS") == 0)
         {
             long v;
-            /* Validar que valor sea entero válido */
+
+            // Verificamos que sea un entero
             if (!es_entero_valido(valor, &v))
             {
+                // Si no es entero, informamos de error
                 fprintf(stderr, "Error en %s:%d: CAJEROS debe ser entero: '%s'\n", archivo, num_linea, valor);
                 fclose(f);
                 return 0;
             }
-            /* Rango mínimo: >= 1 */
+            // Verificamos que sea mayor que 1
             if (v < 1)
             {
+                // Si es menor, informamos error
                 fprintf(stderr, "Error en %s:%d: CAJEROS debe ser >= 1: %ld\n", archivo, num_linea, v);
                 fclose(f);
                 return 0;
@@ -1013,16 +993,21 @@ int leer_configuracion(const char *archivo, int *cajeros, int *tcierre,
         else if (strcmp(nombre, "TCIERRE") == 0)
         {
             long v;
-            /* Validar entero */
+
+            // Verificamos que sea entero
             if (!es_entero_valido(valor, &v))
             {
+                // Si no es entero, informamos error
                 fprintf(stderr, "Error en %s:%d: TCIERRE debe ser entero: '%s'\n", archivo, num_linea, valor);
                 fclose(f);
                 return 0;
             }
-            /* Rango: > 0 */
+
+            // Verificamos que sea mayor que 0
             if (v <= 0)
             {
+
+                // Si es menor, reportamos error
                 fprintf(stderr, "Error en %s:%d: TCIERRE debe ser > 0: %ld\n", archivo, num_linea, v);
                 fclose(f);
                 return 0;
@@ -1033,16 +1018,18 @@ int leer_configuracion(const char *archivo, int *cajeros, int *tcierre,
         else if (strcmp(nombre, "LAMBDA") == 0)
         {
             double v;
-            /* Validar double */
+            // Verificamos que sea numérico
             if (!es_double_valido(valor, &v))
             {
+                // Si no es, reportamos error
                 fprintf(stderr, "Error en %s:%d: LAMBDA debe ser numérico: '%s'\n", archivo, num_linea, valor);
                 fclose(f);
                 return 0;
             }
-            /* Rango: > 0.0 */
+            // Verificamos que sea mayor que 0.0
             if (!(v > 0.0))
             {
+                // Si es menor, reportamos error
                 fprintf(stderr, "Error en %s:%d: LAMBDA debe ser > 0: %g\n", archivo, num_linea, v);
                 fclose(f);
                 return 0;
@@ -1053,16 +1040,18 @@ int leer_configuracion(const char *archivo, int *cajeros, int *tcierre,
         else if (strcmp(nombre, "MU") == 0)
         {
             double v;
-            /* Validar double */
+            // Verificamos que sea numérico
             if (!es_double_valido(valor, &v))
             {
+                // Si no es, reportamos error
                 fprintf(stderr, "Error en %s:%d: MU debe ser numérico: '%s'\n", archivo, num_linea, valor);
                 fclose(f);
                 return 0;
             }
-            /* Rango: > 0.0 */
+            // Verificamos que sea mayor que 0.0
             if (!(v > 0.0))
             {
+                // Si es menor, reportamos error
                 fprintf(stderr, "Error en %s:%d: MU debe ser > 0: %g\n", archivo, num_linea, v);
                 fclose(f);
                 return 0;
@@ -1073,16 +1062,18 @@ int leer_configuracion(const char *archivo, int *cajeros, int *tcierre,
         else if (strcmp(nombre, "MAX_CLIENTES") == 0)
         {
             long v;
-            /* Validar entero */
+            // Verificamos que sea entero
             if (!es_entero_valido(valor, &v))
             {
+                // Si no es, reportamos error
                 fprintf(stderr, "Error en %s:%d: MAX_CLIENTES debe ser entero: '%s'\n", archivo, num_linea, valor);
                 fclose(f);
                 return 0;
             }
-            /* Rango: >= 1 */
+            // Verificamos que sea mayor que 1
             if (v < 1)
             {
+                // Si no es, reportamos error
                 fprintf(stderr, "Error en %s:%d: MAX_CLIENTES debe ser >= 1: %ld\n", archivo, num_linea, v);
                 fclose(f);
                 return 0;
@@ -1092,15 +1083,15 @@ int leer_configuracion(const char *archivo, int *cajeros, int *tcierre,
         }
         else
         {
-            /* Parámetro desconocido: emitir warning y continuar */
+            // Si conseguimos algo desconocido, lo ignoramos
             fprintf(stderr, "Warning en %s:%d: parametro desconocido '%s' (se ignora)\n", archivo, num_linea, nombre);
         }
     }
 
-    /* Cerrar el archivo tras la lectura completa */
+    // Cerramos el archivo en modo lectura
     fclose(f);
 
-    /* Verificar que todos los parámetros obligatorios fueron encontrados */
+    // Verificamos que encontramos todos los parámetros
     if (!encontrado_cajeros)
     {
         fprintf(stderr, "Error: falta el parametro obligatorio CAJEROS en %s\n", archivo);
@@ -1127,7 +1118,6 @@ int leer_configuracion(const char *archivo, int *cajeros, int *tcierre,
         return 0;
     }
 
-    /* Todo correcto */
     return 1;
 }
 
@@ -1195,7 +1185,7 @@ int main(int argc, char *argv[])
         int id = i + 1;
         if (pthread_create(&hilos[i], NULL, atender_clientes, (void *)(intptr_t)id) != 0)
         {
-            //printf("DEBUG: Hilo para cajero %d creado\n", i + 1);
+            // printf("DEBUG: Hilo para cajero %d creado\n", i + 1);
             fprintf(stderr, "Error al crear el hilo del cajero %d\n", id);
             banco_cerrado = 1;
             return EXIT_FAILURE;
@@ -1228,9 +1218,11 @@ int main(int argc, char *argv[])
 
     // Liberaramos todo
     liberar_cola();
-    estadistica_destroy();
-    // NOTA: Cada cliente ya fue liberado por los hilos al atenderlo (free en atender_clientes).
-    // Solo necesitamos liberar el arreglo de punteros.
+
+    // Destruimos Mutex
+    pthread_mutex_destroy(&estadisticas_clientes.mutex);
+
+    // Liberamos clientes
     free(clientes);
 
     return EXIT_SUCCESS;

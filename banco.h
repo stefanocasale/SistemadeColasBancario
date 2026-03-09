@@ -6,8 +6,8 @@
 // Estructura para representar a un cliente
 typedef struct cliente
 {
-    int id;
-    double llegada; // Tiempo de llegada A_i
+    int id;         
+    double llegada; 
 } cliente_t;
 
 // Tipos de eventos
@@ -24,7 +24,7 @@ typedef struct evento
     double tiempo;
     tipo_evento_t tipo;
     int id_cliente;
-    int id_cajero; // -1 para llegadas
+    int id_cajero; // 
 } evento_t;
 
 // Funciones para manejo de eventos
