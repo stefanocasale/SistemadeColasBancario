@@ -418,7 +418,7 @@ void *atender_clientes(void *arg)
 {
     // Obtenemos el ID del cajero desde el argumento
     int id_cajero = (int)(intptr_t)arg;
-    printf("DEBUG: Cajero %d iniciando (tid=%lu)\n", id_cajero, pthread_self());
+    //printf("DEBUG: Cajero %d iniciando (tid=%lu)\n", id_cajero, pthread_self());
     double tiempo_libre = 0.0;
 
     // Creamos el ciclo de atencion de clientes para el cajero
@@ -430,10 +430,10 @@ void *atender_clientes(void *arg)
         // Si no hay clientes en la cola salimos del ciclo
         if (cliente == NULL)
         {
-            printf("DEBUG: Cajero %d no obtuvo cliente y termina\n", id_cajero);
+            //printf("DEBUG: Cajero %d no obtuvo cliente y termina\n", id_cajero);
             break;
         }
-        printf("DEBUG: Cajero %d atendiendo cliente %d\n", id_cajero, cliente->id);
+        //printf("DEBUG: Cajero %d atendiendo cliente %d\n", id_cajero, cliente->id);
 
         // Si tenemos un cliente lo atendemos
         double B = (cliente->llegada > tiempo_libre) ? cliente->llegada : tiempo_libre;
@@ -1195,7 +1195,7 @@ int main(int argc, char *argv[])
         int id = i + 1;
         if (pthread_create(&hilos[i], NULL, atender_clientes, (void *)(intptr_t)id) != 0)
         {
-            printf("DEBUG: Hilo para cajero %d creado\n", i + 1);
+            //printf("DEBUG: Hilo para cajero %d creado\n", i + 1);
             fprintf(stderr, "Error al crear el hilo del cajero %d\n", id);
             banco_cerrado = 1;
             return EXIT_FAILURE;
